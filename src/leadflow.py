@@ -6,6 +6,9 @@ import sys
 import time
 from pathlib import Path
 
+from src.discovery import slugify
+from src.niches import resolve_niche
+
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -17,21 +20,31 @@ class PipelineError(RuntimeError):
 def run_module(
     module: str,
     label: str,
+    args: list[str] | None = None,
+    verbose: bool = False,
+    silent: bool = False,
 ) -> None:
-    print()
-    print("=" * 84)
-    print(f"ETAPA — {label}")
-    print("=" * 84)
+    if verbose:
+        print()
+        print("=" * 84)
+        print(f"ETAPA — {label}")
+        print("=" * 84)
 
     command = [
         sys.executable,
         "-m",
         module,
+        *(args or []),
     ]
 
     result = subprocess.run(
         command,
         cwd=ROOT,
+        stdout=(
+            subprocess.DEVNULL
+            if silent
+            else None
+        ),
     )
 
     if result.returncode != 0:
@@ -71,51 +84,51 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limite de leads nas etapas que suportam corte.",
+    )
+
+    parser.add_argument(
+        "--min-score",
+        type=int,
+        default=70,
+        help="Score mínimo para listar oportunidade acionável.",
+    )
+
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Mostra diagnóstico das etapas intermediárias.",
+    )
+
     return parser.parse_args()
 
 
 def validate_scope(
     city: str,
     niche: str,
-) -> None:
+) -> str:
     normalized_city = (
         city.strip()
         .lower()
     )
 
-    normalized_niche = (
-        niche.strip()
-        .lower()
-    )
-
-    supported_niches = {
-        "dentista",
-        "dentistas",
-        "odontologia",
-        "clinicas odontologicas",
-        "clínicas odontológicas",
-    }
-
-    if (
-        normalized_city != "manaus"
-        or normalized_niche
-        not in supported_niches
-    ):
+    if normalized_city != "manaus":
         raise PipelineError(
             "\nEsta versão do MVP está validada "
-            "somente para dentistas em Manaus.\n"
-            "\n"
-            "Não vou executar outro nicho como se "
-            "o pipeline já fosse genérico.\n"
-            "\n"
-            "Próxima evolução: parametrizar "
-            "discovery + enrichment + contexto "
-            "do verifier."
+            "somente para Manaus.\n"
         )
+
+    return resolve_niche(
+        niche
+    ).key
 
 
 def required_file(
-    path: str,
+    path: Path,
 ) -> Path:
     file_path = ROOT / path
 
@@ -132,64 +145,142 @@ def required_file(
 def main() -> None:
     args = parse_args()
 
-    validate_scope(
+    niche_key = validate_scope(
         args.city,
         args.niche,
     )
 
     started_at = time.time()
 
-    print()
-    print("=" * 84)
-    print("LEADFLOW ZERO")
-    print("=" * 84)
-
-    print(
-        f"Cidade : {args.city}"
-    )
-
-    print(
-        f"Nicho  : {args.niche}"
-    )
-
-    print(
-        f"Modo   : "
-        f"{'BUSCA COMPLETA' if args.refresh else 'DADOS EXISTENTES'}"
-    )
+    if args.verbose:
+        print()
+        print("=" * 84)
+        print("LEADFLOW ZERO")
+        print("=" * 84)
+        print(
+            f"Cidade : {args.city}"
+        )
+        print(
+            f"Nicho  : {niche_key}"
+        )
+        print(
+            f"Modo   : "
+            f"{'BUSCA COMPLETA' if args.refresh else 'DADOS EXISTENTES'}"
+        )
 
     # ========================================================
     # DISCOVERY + ENRICHMENT
     # ========================================================
 
+    city_slug = slugify(
+        args.city
+    )
+
+    base_args = [
+        "--city",
+        args.city,
+        "--niche",
+        args.niche,
+    ]
+
+    limited_args = base_args.copy()
+
+    if args.limit:
+        limited_args.extend(
+            [
+                "--limit",
+                str(args.limit),
+            ]
+        )
+
     if args.refresh:
         run_module(
             "src.discovery",
             "DISCOVERY",
+            limited_args,
+            verbose=args.verbose,
+            silent=not args.verbose,
         )
 
         run_module(
             "src.enrichment_v2",
             "ENRICHMENT",
+            limited_args,
+            verbose=args.verbose,
+            silent=not args.verbose,
         )
 
     else:
         required_file(
-            "data/processed/"
-            "manaus_dentistas_enriched_v2.csv"
+            Path(
+                "data/processed"
+            )
+            / f"{city_slug}_{niche_key}_enriched_v2.csv"
         )
+
+    run_module(
+        "src.candidates",
+        "CANDIDATES",
+        [
+            *limited_args,
+            "--quiet",
+        ],
+        verbose=args.verbose,
+        silent=not args.verbose,
+    )
 
     # ========================================================
     # VERIFICATION
     # ========================================================
 
+    quiet = [] if args.verbose else ["--quiet"]
+
     run_module(
         "src.verifier_v2",
         "ENTITY VERIFICATION",
+        [
+            *base_args,
+            *(
+                [
+                    "--limit",
+                    str(args.limit),
+                ]
+                if args.limit
+                else []
+            ),
+            *quiet,
+        ],
+        verbose=args.verbose,
+        silent=not args.verbose,
     )
 
     required_file(
-        "data/processed/"
-        "manaus_dentistas_verified_v2.csv"
+        Path(
+            "data/processed"
+        )
+        / f"{city_slug}_{niche_key}_verified_v2.csv"
+    )
+
+    # ========================================================
+    # WHATSAPP
+    # ========================================================
+
+    run_module(
+        "src.whatsapp",
+        "WHATSAPP RESOLVER",
+        [
+            *base_args,
+            *quiet,
+        ],
+        verbose=args.verbose,
+        silent=not args.verbose,
+    )
+
+    required_file(
+        Path(
+            "data/processed"
+        )
+        / f"{city_slug}_{niche_key}_whatsapp.csv"
     )
 
     # ========================================================
@@ -199,11 +290,19 @@ def main() -> None:
     run_module(
         "src.opportunity",
         "OPPORTUNITY ENGINE",
+        [
+            *base_args,
+            "--min-score",
+            str(args.min_score),
+        ],
+        verbose=args.verbose,
     )
 
-    required_file(
-        "data/processed/"
-        "manaus_dentistas_opportunities.csv"
+    output_file = required_file(
+        Path(
+            "data/processed"
+        )
+        / f"{city_slug}_{niche_key}_opportunities.csv"
     )
 
     elapsed = (
@@ -211,27 +310,18 @@ def main() -> None:
         - started_at
     )
 
-    print()
-    print("=" * 84)
-    print("PIPELINE CONCLUÍDO")
-    print("=" * 84)
-
-    print(
-        f"Tempo total: "
-        f"{elapsed:.1f}s"
-    )
-
-    print(
-        "Resultado: "
-        "data/processed/"
-        "manaus_dentistas_opportunities.csv"
-    )
-
-    print()
-    print(
-        "Use somente os leads marcados "
-        "como ABORDAR para prospecção."
-    )
+    if args.verbose:
+        print()
+        print("=" * 84)
+        print("PIPELINE CONCLUÍDO")
+        print("=" * 84)
+        print(
+            f"Tempo total: "
+            f"{elapsed:.1f}s"
+        )
+        print(
+            f"Resultado: {output_file}"
+        )
 
 
 if __name__ == "__main__":

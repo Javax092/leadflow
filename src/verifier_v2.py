@@ -674,6 +674,7 @@ def best_by_type(
 def verify_leads(
     city: str,
     niche_name: str,
+    limit: int | None = None,
     verbose: bool = True,
 ) -> tuple[list[dict], Path]:
     niche = resolve_niche(
@@ -702,6 +703,12 @@ def verify_leads(
         leads = list(
             csv.DictReader(file)
         )
+
+    if (
+        limit is not None
+        and limit > 0
+    ):
+        leads = leads[:limit]
 
     rows = []
 
@@ -853,6 +860,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
     )
 
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+    )
+
     return parser.parse_args()
 
 
@@ -863,6 +876,7 @@ def main() -> None:
         rows, output_file = verify_leads(
             city=args.city,
             niche_name=args.niche,
+            limit=args.limit,
             verbose=not args.quiet,
         )
 
