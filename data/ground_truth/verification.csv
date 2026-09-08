@@ -1,0 +1,16 @@
+lead,type,value,expected
+Uniodonto Manaus,website,https://www.uniodontomanaus.com.br/,TRUE
+Uniodonto Manaus,instagram,uniodontomanaus,TRUE
+Consultorio Odontologico Volte a Sorrir,phone,9236290910,TRUE
+Consultorio Odontologico Volte a Sorrir,instagram,dentista_sorayafarias,UNKNOWN
+Dra. Pâmela Lima,phone,92981421036,TRUE
+Dra. Pâmela Lima,website,https://consultoriopamelalima.com/,TRUE
+Dra. Pâmela Lima,instagram,pamelima_,TRUE
+JB Odonto,instagram,trinitaclinica,FALSE
+JB Odonto,website,https://www.arquivosdeneuropsiquiatria.org/wp-content/uploads/2022/02/ANP-v79n11_baixa-sem-anuncio.pdf,FALSE
+Adolfo Ferreira,website,https://wanderlog.com/list/geoCategory/174337/best-street-markets-in-manaus,FALSE
+Adolfo Ferreira,email,gate@trasnportesals.com.br,FALSE
+Consultório Odontológico Dr. Ademar Oliveira Santos,website,https://www.acnur.org/fileadmin/Documentos/BDL/2005/3316.pdf,FALSE
+Consultório Odontológico Dr. Ademar Oliveira Santos,email,agendafhaddad@gmail.com,FALSE
+Referência Odontológica,instagram,banzeiromanaus.oficial,FALSE
+Referência Odontológica,website,https://www.ortosena.com.br/,FALSE
